@@ -136,6 +136,13 @@ class Database:
         with self.connection() as connection:
             return connection.fetch_all(query, values)
 
+    def fetch_all_as_json_string(
+        self, query: typing.Union[ClauseElement, str], values: dict = None
+    ) -> typing.AnyStr:
+        with self.connection() as connection:
+            return connection.fetch_all_as_json_string(query, values)
+
+
     def fetch_one(
         self, query: typing.Union[ClauseElement, str], values: dict = None
     ) -> typing.Optional[Record]:
@@ -237,6 +244,12 @@ class Connection:
     ) -> typing.List[Record]:
         built_query = self._build_query(query, values)
         return self._connection.fetch_all(built_query)
+
+    def fetch_all_as_json_string(
+        self, query: typing.Union[ClauseElement, str], values: dict = None
+    ) -> typing.AnyStr:
+        built_query = self._build_query(query, values)
+        return self._connection.fetch_all_as_json_string(built_query)
 
     def fetch_one(
         self, query: typing.Union[ClauseElement, str], values: dict = None

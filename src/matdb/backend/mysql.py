@@ -2,7 +2,8 @@
 import logging
 import typing
 import uuid
-
+import json
+import datetime, decimal
 import pymysql
 from sqlalchemy.dialects import *
 from sqlalchemy.engine.cursor import CursorResultMetaData
@@ -73,6 +74,12 @@ class MySQLPool:
     def release(self, connection: pymysql.Connection) -> None:
         connection.close()
 
+def alchemyencoder(obj):
+    """JSON encoder function for SQLAlchemy special classes."""
+    if isinstance(obj, datetime.date):
+        return obj.isoformat()
+    elif isinstance(obj, decimal.Decimal):
+        return float(obj)
 
 class CompilationContext:
     def __init__(self, context: ExecutionContext):
@@ -114,6 +121,12 @@ class MySQLConnection(ConnectionBackend):
             ]
         finally:
             cursor.close()
+
+    def fetch_all_as_json_string(self, query: ClauseElement) -> typing.AnyStr:
+        rows = self.fetch_all(query)
+        result = json.dumps([dict(r) for r in rows], default=alchemyencoder)
+        return result
+
 
     def fetch_one(self, query: ClauseElement) -> typing.Optional[Record]:
         assert self._connection is not None, "Connection is not acquired"

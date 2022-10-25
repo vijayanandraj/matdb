@@ -25,6 +25,9 @@ class ConnectionBackend:
     def fetch_all(self, query: ClauseElement) -> typing.List["Record"]:
         raise NotImplementedError()  # pragma: no cover
 
+    def fetch_all_as_json_string(self, query: ClauseElement) -> typing.AnyStr:
+        raise NotImplementedError()  # pragma: no cover
+
     def fetch_one(self, query: ClauseElement) -> typing.Optional["Record"]:
         raise NotImplementedError()  # pragma: no cover
 
@@ -44,8 +47,6 @@ class ConnectionBackend:
         self, query: ClauseElement
     ) -> typing.AsyncGenerator[typing.Mapping, None]:
         raise NotImplementedError()  # pragma: no cover
-        # mypy needs iterators to contain a `yield`
-        # https://github.com/python/mypy/issues/5385#issuecomment-407281656
         yield True  # pragma: no cover
 
     def transaction(self) -> "TransactionBackend":

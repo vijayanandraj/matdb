@@ -3,7 +3,8 @@ from matdb.core import Database
 
 logging.basicConfig(level=logging.DEBUG)
 logging.debug("Welcome")
-db_string = "mysql://vijay:Vinisha329$@localhost:3306/test"
+#db_string = "mysql://vijay:Vinisha329$@localhost:3306/test?min_size=5&max_size=20&pre_create_num=5"
+db_string = "mysql://vijay:Vinisha329$@localhost:3306/test?min_size=5&max_size=20"
 database = Database(db_string)
 database.connect()
 print("Connection established....")

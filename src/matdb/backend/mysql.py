@@ -12,6 +12,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 
+from matdb.backend.pool import mysqlpool
 from matdb.core import LOG_EXTRA, DatabaseURL
 from matdb.interfaces import (
     ConnectionBackend,
@@ -32,47 +33,72 @@ class MySQLBackend(DatabaseBackend):
         self._dialect = mysql.pymysql.dialect(paramstyle="pyformat")
         # aiosqlite does not support decimals
         self._dialect.supports_native_decimal = True
-        self._pool = MySQLPool(self._database_url, **self._options)
+        self._pool = None
+
+    def _get_connection_kwargs(self) -> dict:
+        url_options = self._database_url.options
+        kwargs = {}
+        min_size = url_options.get("min_size")
+        max_size = url_options.get("max_size")
+        pre_create_num = url_options.get("pre_create_num")
+        ssl = url_options.get("ssl")
+
+
+        if min_size is not None:
+            kwargs["minsize"] = int(min_size)
+        if max_size is not None:
+            kwargs["maxsize"] = int(max_size)
+        if pre_create_num is not None:
+            kwargs["pre_create_num"] = int(pre_create_num)
+        if ssl is not None:
+            kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
+
+        for key, value in self._options.items():
+            # Coerce 'min_size' and 'max_size' for consistency.
+            if key == "min_size":
+                key = "minsize"
+            elif key == "max_size":
+                key = "maxsize"
+            kwargs[key] = value
+
+        return kwargs
+
 
     def connect(self) -> None:
-        pass
-        # assert self._pool is None, "DatabaseBackend is already running"
-        # self._pool = await aiomysql.create_pool(
-        #     host=self._database_url.hostname,
-        #     port=self._database_url.port or 3306,
-        #     user=self._database_url.username or getpass.getuser(),
-        #     password=self._database_url.password,
-        #     db=self._database_url.database,
-        #     autocommit=True,
-        # )
+        kwargs = self._get_connection_kwargs()
+        config = {'host': self._database_url.hostname, 'user': self._database_url.username,
+                  'password': self._database_url.password, 'database': self._database_url.database, 'autocommit': True}
+        #Defaulted to 5, 5 and 10 for Min, Pre create and max size
+        minsize = kwargs.get('minsize', 5)
+        pre_create_num = kwargs.get('pre_create_num', 5)
+        maxsize = kwargs.get('pre_create_num', 10)
+        self._pool = mysqlpool.ConnectionPool(size=minsize, maxsize=maxsize, pre_create_num=pre_create_num, name='pool1', **config)
+        logger.info("MySQL Connection pool initialized...")
 
     def disconnect(self) -> None:
         pass
-        # assert self._pool is not None, "DatabaseBackend is not running"
-        # self._pool.close()
-        # await self._pool.wait_closed()
-        # self._pool = None
 
     def connection(self) -> "MySQLConnection":
-        return MySQLConnection(self._pool, self._dialect)
+        return MySQLConnection(self, self._dialect)
 
 # Modify this to
-class MySQLPool:
-    def __init__(self, url: DatabaseURL, **options: typing.Any) -> None:
-        self._url = url
-        self._options = options
-
-    def acquire(self) -> pymysql.Connection:
-        host=self._url.hostname
-        port=self._url.port or 3306
-        user=self._url.username
-        password=self._url.password
-        db=self._url.database
-        connection = pymysql.connect(host=host, port=port, user=user, password=password, db=db, autocommit=True)
-        return connection
-
-    def release(self, connection: pymysql.Connection) -> None:
-        connection.close()
+# class MySQLPool:
+#     def __init__(self, url: DatabaseURL, **options: typing.Any) -> None:
+#         self._url = url
+#         self._options = options
+#
+#     def acquire(self) -> pymysql.Connection:
+#         # host=self._url.hostname
+#         # port=self._url.port or 3306
+#         # user=self._url.username
+#         # password=self._url.password
+#         # db=self._url.database
+#         #connection = pymysql.connect(host=host, port=port, user=user, password=password, db=db, autocommit=True)
+#         connection = self._poo
+#         return connection
+#
+#     def release(self, connection: pymysql.Connection) -> None:
+#         connection.close()
 
 def alchemyencoder(obj):
     """JSON encoder function for SQLAlchemy special classes."""
@@ -87,18 +113,20 @@ class CompilationContext:
 
 
 class MySQLConnection(ConnectionBackend):
-    def __init__(self, pool: MySQLPool, dialect: Dialect):
-        self._pool = pool
+    def __init__(self, database: MySQLBackend, dialect: Dialect):
+
+        self._database = database
         self._dialect = dialect
         self._connection = None  # type: typing.Optional[pymysql.Connection]
 
     def acquire(self) -> None:
         assert self._connection is None, "Connection is already acquired"
-        self._connection = self._pool.acquire()
+        assert self._database._pool is not None, "DatabaseBackend is not running"
+        self._connection = self._database._pool.get_connection()
 
     def release(self) -> None:
         assert self._connection is not None, "Connection is not acquired"
-        self._pool.release(self._connection)
+        self._connection.close()
         self._connection = None
 
     def fetch_all(self, query: ClauseElement) -> typing.List[Record]:

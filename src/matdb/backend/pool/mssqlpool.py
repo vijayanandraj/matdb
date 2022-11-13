@@ -1,36 +1,34 @@
 
-import pymysql
+import pymssql
 import warnings
 import logging
 import time
 from collections import deque
-
 __all__ = ['Connection', 'ConnectionPool', 'logger']
 
-warnings.filterwarnings('error', category=pymysql.err.Warning)
+#warnings.filterwarnings('error', category=pymssql.Warning)
 # use logging module for easy debug
 logging.basicConfig(format='%(asctime)s %(levelname)8s: %(message)s', datefmt='%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 logger.setLevel('WARNING')
 
 
-class Connection(pymysql.connections.Connection):
+class Connection(pymssql.Connection):
     """
     Return a connection object with or without connection_pool feature.
-    This is all the same with pymysql.connections.Connection instance except that with connection_pool feature:
+    This is all the same with pymssql.Connection instance except that with connection_pool feature:
         the __exit__() method additionally put the connection back to it's pool
     """
     _pool = None
-    _reusable_expection = (pymysql.err.ProgrammingError, pymysql.err.IntegrityError, pymysql.err.NotSupportedError)
+    _reusable_expection = (pymssql.ProgrammingError, pymssql.IntegrityError, pymssql.NotSupportedError)
 
-    def __init__(self, *args, **kwargs):
-        pymysql.connections.Connection.__init__(self, *args, **kwargs)
-        self.args = args
-        self.kwargs = kwargs
+    def __init__(self, conn, as_dict, autocommit):
+        logger.info("In connecion init")
+        pymssql.Connection.__init__(self, conn, as_dict, autocommit)
 
     def __exit__(self, exc, value, traceback):
         """
-        Overwrite the __exit__() method of pymysql.connections.Connection
+        Overwrite the __exit__() method of pymssql.Connection
         Base action: on successful exit, commit. On exception, rollback
         With pool additional action: put connection back to pool
         """
@@ -47,56 +45,39 @@ class Connection(pymysql.connections.Connection):
                 except Exception:
                     self._force_close()
         else:
-            pymysql.connections.Connection.__exit__(self, exc, value, traceback)
+            pymssql.Connection.__exit__(self, exc, value, traceback)
 
     def close(self):
         """
-        Overwrite the close() method of pymysql.connections.Connection
+        Overwrite the close() method of pymssql.Connection
         With pool, put connection back to pool;
         Without pool, send the quit message and close the socket
         """
         if self._pool is not None:
             self._pool._put_connection(self)
         else:
-            pymysql.connections.Connection.close(self)
+            pymssql.Connection.close(self)
 
     def ping(self, reconnect=True):
         """
-        Overwrite the ping() method of pymysql.connections.Connection
+        Overwrite the ping() method of pymssql.Connection
         Check if the server is alive.
         :param reconnect: If the connection is closed, reconnect.
         :type reconnect: boolean
         :raise Error: If the connection is closed and reconnect=False.
         """
-        if self._sock is None:
-            if reconnect:
-                self.connect()
-                reconnect = False
-            else:
-                raise pymysql.err.Error("Already closed")
-        try:
-            self._execute_command(pymysql.constants.COMMAND.COM_PING, "")
-            self._read_ok_packet()
-        except Exception:
-            if reconnect:
-                # here add action to deal the old/broken connection in pool
-                if self._pool is not None:
-                    logger.debug('Connection had broken in pool(%s), reconnect it', self._pool.name)
-                    self._force_close()
-                self.connect()
-                self.ping(False)
-            else:
-                raise
+        pass
+
 
     def execute_query(self, query, args=(), dictcursor=False, return_one=False, exec_many=False):
         """
-        A wrapped method of pymysql's execute() or executemany().
+        A wrapped method of pymssql's execute() or executemany().
         dictcursor: whether want use the dict cursor(cursor's default type is tuple)
         return_one: whether want only one row of the result
-        exec_many: whether use pymysql's executemany() method
+        exec_many: whether use pymssql's executemany() method
         """
         with self:
-            cur = self.cursor() if not dictcursor else self.cursor(pymysql.cursors.DictCursor)
+            cur = self.cursor() if not dictcursor else self.cursor(pymssql.Cursor)
             try:
                 if exec_many:
                     cur.executemany(query, args)
@@ -136,7 +117,7 @@ class ConnectionPool:
                 you should make sure that mysql's 'wait_timeout' variable is greater than the con_lifetime.
             0 or negative means do not consider the lifetime
         args & kwargs:
-            same as pymysql.connections.Connection()
+            same as pymssql.Connection()
         """
         self._size = size
         self.maxsize = maxsize
@@ -231,9 +212,11 @@ class ConnectionPool:
             raise ReturnConnectionToPoolError("this connection has already returned to the pool({})".format(self.name))
 
     def _create_connection(self):
-        conn = Connection(*self._args, **self._kwargs)
-
-
+        #conn = Connection(*self._args, **self._kwargs)
+        kwargs = self._kwargs
+        pyconn = pymssql.connect(host=kwargs['host'],   user=kwargs['user'], password = kwargs['password'], database = kwargs['database'], autocommit=True)
+        msqlconn = pyconn._conn
+        conn = Connection(msqlconn, False, False)
         conn._pool = self
         # add attr create timestamp for connection
         conn._create_ts = int(time.time())

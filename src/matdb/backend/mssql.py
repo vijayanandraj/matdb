@@ -9,7 +9,7 @@ from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
 from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
-
+from dbutils.pooled_db import PooledDB
 from matdb.backend.pool import mssqlpool
 from matdb.core import LOG_EXTRA, DatabaseURL
 from matdb.interfaces import (
@@ -62,13 +62,14 @@ class MSSQLBackend(DatabaseBackend):
 
     def connect(self) -> None:
         kwargs = self._get_connection_kwargs()
-        config = {'host': self._database_url.hostname, 'user': self._database_url.username,
+        conn_kwargs = {'host': self._database_url.hostname, 'port': self._database_url.port, 'user': self._database_url.username,
                   'password': self._database_url.password, 'database': self._database_url.database, 'autocommit': True}
         #Defaulted to 5, 5 and 10 for Min, Pre create and max size
         minsize = kwargs.get('minsize', 5)
         pre_create_num = kwargs.get('pre_create_num', 5)
         maxsize = kwargs.get('pre_create_num', 10)
-        self._pool = mssqlpool.ConnectionPool(size=minsize, maxsize=maxsize, pre_create_num=pre_create_num, name='pool1', **config)
+        #self._pool = mssqlpool.ConnectionPool(size=minsize, maxsize=maxsize, pre_create_num=pre_create_num, name='pool1', **config)
+        self._pool = PooledDB(pymssql, mincached=minsize, maxcached=10, maxconnections=maxsize, **conn_kwargs)
         logger.info("MySQL Connection pool initialized...")
 
     def disconnect(self) -> None:
@@ -92,7 +93,7 @@ class MSSQLConnection(ConnectionBackend):
     def acquire(self) -> None:
         assert self._connection is None, "Connection is already acquired"
         assert self._database._pool is not None, "DatabaseBackend is not running"
-        self._connection = self._database._pool.get_connection()
+        self._connection = self._database._pool.connection()
 
     def release(self) -> None:
         assert self._connection is not None, "Connection is not acquired"

@@ -9,3 +9,4 @@ database.connect()
 print("Connection established")
 rows = database.fetch_all(query="select * from emp")
 print(rows)
+

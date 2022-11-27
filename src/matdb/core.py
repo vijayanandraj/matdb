@@ -369,28 +369,25 @@ class Transaction:
         self._connection = self._connection_callable()
         self._transaction = self._connection._connection.transaction()
 
-        with self._connection._transaction_lock:
-            is_root = not self._connection._transaction_stack
-            self._connection.__enter__()
-            self._transaction.start(
-                is_root=is_root, extra_options=self._extra_options
-            )
-            self._connection._transaction_stack.append(self)
+        is_root = not self._connection._transaction_stack
+        self._connection.__enter__()
+        self._transaction.start(
+            is_root=is_root, extra_options=self._extra_options
+        )
+        self._connection._transaction_stack.append(self)
         return self
 
     def commit(self) -> None:
-        with self._connection._transaction_lock:
-            assert self._connection._transaction_stack[-1] is self
-            self._connection._transaction_stack.pop()
-            self._transaction.commit()
-            self._connection.__exit__()
+        assert self._connection._transaction_stack[-1] is self
+        self._connection._transaction_stack.pop()
+        self._transaction.commit()
+        self._connection.__exit__()
 
     def rollback(self) -> None:
-        with self._connection._transaction_lock:
-            assert self._connection._transaction_stack[-1] is self
-            self._connection._transaction_stack.pop()
-            self._transaction.rollback()
-            self._connection.__exit__()
+        assert self._connection._transaction_stack[-1] is self
+        self._connection._transaction_stack.pop()
+        self._transaction.rollback()
+        self._connection.__exit__()
 
 
 class _EmptyNetloc(str):

@@ -10,7 +10,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 from dbutils.pooled_db import PooledDB
-from matdb.backend.pool import mssqlpool
+
 from matdb.core import LOG_EXTRA, DatabaseURL
 from matdb.interfaces import (
     ConnectionBackend,
@@ -226,7 +226,8 @@ class MSSQLConnection(ConnectionBackend):
 class MSSQLTransaction(TransactionBackend):
     def __init__(self, connection: MSSQLConnection):
         self._connection = connection
-        self._is_root = False
+        #self._connection._connection.autocommit(False)
+        self._is_root = True
         self._savepoint_name = ""
 
     def start(
@@ -234,36 +235,18 @@ class MSSQLTransaction(TransactionBackend):
     ) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
         self._is_root = is_root
-        if self._is_root:
-            self._connection._connection.begin()
-        else:
-            id = str(uuid.uuid4()).replace("-", "_")
-            self._savepoint_name = f"STARLETTE_SAVEPOINT_{id}"
-            cursor = self._connection._connection.cursor()
-            try:
-                cursor.execute(f"SAVEPOINT {self._savepoint_name}")
-            finally:
-                cursor.close()
+        self._connection._connection._con._con.autocommit(False)
+        self._connection._connection.begin()
+
 
     def commit(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
-        if self._is_root:
-            self._connection._connection.commit()
-        else:
-            cursor = self._connection._connection.cursor()
-            try:
-                cursor.execute(f"RELEASE SAVEPOINT {self._savepoint_name}")
-            finally:
-                cursor.close()
+        self._connection._connection.commit()
+        self._connection._connection._con._con.autocommit(True)
+
 
     def rollback(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
-        if self._is_root:
-            self._connection._connection.rollback()
-        else:
-            cursor = self._connection._connection.cursor()
-            try:
-                cursor.execute(f"ROLLBACK TO SAVEPOINT {self._savepoint_name}")
-            finally:
-                cursor.close()
+        self._connection._connection.rollback()
+        self._connection._connection._con._con.autocommit(True)
 
